@@ -1,7 +1,8 @@
 import json
 import datetime
 
-from xml.etree.ElementTree import Element
+# from xml.etree.ElementTree import Element
+import lxml.etree as xml
 from typing import TypeVar
 from typing import Optional
 
@@ -67,7 +68,7 @@ class PubMedArticle(object):
         path = ".//AbstractText"
         return getContent(element=xml_element, path=path)
 
-    def _extractNotConclusion(self: object, xml_element: TypeVar["Element"]) -> str:
+    def _extractNotConclusion(self: object, xml_element: TypeVar("Element")) -> str:
         path = ".//AbstractText[not(@Label='CONCLUSION')]"
         return getContent(element=xml_element, path=path)
 
