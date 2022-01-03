@@ -9,8 +9,7 @@ from .helpers import getContent
 
 
 class PubMedArticle(object):
-    """ Data class that contains a PubMed article.
-    """
+    """Data class that contains a PubMed article."""
 
     __slots__ = (
         "pubmed_id",
@@ -21,7 +20,8 @@ class PubMedArticle(object):
         "publication_date",
         "authors",
         "methods",
-        "conclusions",
+        "conclusion",
+        "not_conclusion",
         "results",
         "copyrights",
         "doi",
@@ -34,8 +34,7 @@ class PubMedArticle(object):
         *args: list,
         **kwargs: dict,
     ) -> None:
-        """ Initialization of the object from XML or from parameters.
-        """
+        """Initialization of the object from XML or from parameters."""
 
         # If an XML element is provided, use it for initialization
         if xml_element is not None:
@@ -68,7 +67,11 @@ class PubMedArticle(object):
         path = ".//AbstractText"
         return getContent(element=xml_element, path=path)
 
-    def _extractConclusions(self: object, xml_element: TypeVar("Element")) -> str:
+    def _extractNotConclusion(self: object, xml_element: TypeVar["Element"]) -> str:
+        path = ".//AbstractText[not(@Label='CONCLUSION')]"
+        return getContent(element=xml_element, path=path)
+
+    def _extractConclusion(self: object, xml_element: TypeVar("Element")) -> str:
         path = ".//AbstractText[@Label='CONCLUSION']"
         return getContent(element=xml_element, path=path)
 
@@ -116,14 +119,15 @@ class PubMedArticle(object):
                 "lastname": getContent(author, ".//LastName", None),
                 "firstname": getContent(author, ".//ForeName", None),
                 "initials": getContent(author, ".//Initials", None),
-                "affiliation": getContent(author, ".//AffiliationInfo/Affiliation", None),
+                "affiliation": getContent(
+                    author, ".//AffiliationInfo/Affiliation", None
+                ),
             }
             for author in xml_element.findall(".//Author")
         ]
 
     def _initializeFromXML(self: object, xml_element: TypeVar("Element")) -> None:
-        """ Helper method that parses an XML element into an article object.
-        """
+        """Helper method that parses an XML element into an article object."""
 
         # Parse the different fields of the article
         self.pubmed_id = self._extractPubMedId(xml_element)
@@ -131,7 +135,8 @@ class PubMedArticle(object):
         self.keywords = self._extractKeywords(xml_element)
         self.journal = self._extractJournal(xml_element)
         self.abstract = self._extractAbstract(xml_element)
-        self.conclusions = self._extractConclusions(xml_element)
+        self.conclusion = self._extractConclusion(xml_element)
+        self.not_conclusion = self._extractNotConclusion(xml_element)
         self.methods = self._extractMethods(xml_element)
         self.results = self._extractResults(xml_element)
         self.copyrights = self._extractCopyrights(xml_element)
@@ -141,18 +146,20 @@ class PubMedArticle(object):
         self.xml = xml_element
 
     def toDict(self: object) -> dict:
-        """ Helper method to convert the parsed information to a Python dict.
-        """
+        """Helper method to convert the parsed information to a Python dict."""
 
         return {key: self.__getattribute__(key) for key in self.__slots__}
 
     def toJSON(self: object) -> str:
-        """ Helper method for debugging, dumps the object as JSON string.
-        """
+        """Helper method for debugging, dumps the object as JSON string."""
 
         return json.dumps(
             {
-                key: (value if not isinstance(value, (datetime.date, Element)) else str(value))
+                key: (
+                    value
+                    if not isinstance(value, (datetime.date, Element))
+                    else str(value)
+                )
                 for key, value in self.toDict().items()
             },
             sort_keys=True,
