@@ -2,7 +2,7 @@ import json
 import datetime
 
 # from xml.etree.ElementTree import Element
-import lxml.etree as xml
+from lxml.etree import _Element
 from typing import TypeVar
 from typing import Optional
 
@@ -69,11 +69,11 @@ class PubMedArticle(object):
         return getContent(element=xml_element, path=path)
 
     def _extractNotConclusion(self: object, xml_element: TypeVar("Element")) -> str:
-        path = ".//AbstractText[not(@Label='CONCLUSION')]"
+        path = ".//AbstractText[not(starts-with(@Label, 'CONC'))]"
         return getContent(element=xml_element, path=path)
 
     def _extractConclusion(self: object, xml_element: TypeVar("Element")) -> str:
-        path = ".//AbstractText[@Label='CONCLUSION']"
+        path = ".//AbstractText[starts-with(@Label, 'CONC')]"
         return getContent(element=xml_element, path=path)
 
     def _extractMethods(self: object, xml_element: TypeVar("Element")) -> str:
@@ -158,7 +158,7 @@ class PubMedArticle(object):
             {
                 key: (
                     value
-                    if not isinstance(value, (datetime.date, Element))
+                    if not isinstance(value, (datetime.date, _Element))
                     else str(value)
                 )
                 for key, value in self.toDict().items()

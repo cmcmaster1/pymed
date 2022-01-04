@@ -6,7 +6,7 @@ import lxml.etree as xml
 
 from typing import Union
 
-from .helpers import batches
+# from .helpers import batches
 from .article import PubMedArticle
 from .book import PubMedBookArticle
 
@@ -54,8 +54,13 @@ class PubMed(object):
         if api_key:
             self.parameters["api_key"] = api_key
 
-    def query(self: object, query: str, max_results: int = 100, batch_size: int = 250):
-        """Method that executes a query agains the GraphQL schema, automatically
+    def split_range(self: object, max: int = 20_000):
+        """Helper method to split a range of numbers into batches of a maximum size 10_000."""
+        for i in range(0, max, 10_000):
+            yield i, min(i + 10_000, max)
+
+    def query(self: object, query: str, max_results: int = 100):
+        """Method that executes a query against the GraphQL schema, automatically
         inserting the PubMed data loader.
 
         Parameters:
@@ -71,10 +76,22 @@ class PubMed(object):
         # Retrieve the PubMed query data
         self.query_data = self._getPubMedData(query=query, max_results=max_results)
 
-        # Get the articles
-        articles = [self._getArticlesEnv(query_data=self.query_data)]
+        # Get the articles (split into batches of 10_000 if max_results is greater than 10_000)
+        if max_results > 10_000:
+            self.articles = list(
+                itertools.chain.from_iterable(
+                    self._getArticlesEnv(
+                        query_data=self.query_data, start=start, end=end
+                    )
+                    for start, end in self.split_range(max=max_results)
+                )
+            )
+        else:
+            self.articles = self._getArticlesEnv(
+                query_data=self.query_data, start=0, end=max_results
+            )
 
-        # Old method
+        #### Old method - archived for reference
         # Retrieve the article IDs for the query
         # article_ids = self._getArticleIds(query=query, max_results=max_results)
 
@@ -84,10 +101,8 @@ class PubMed(object):
         #     for batch in batches(article_ids, batch_size)
         # ]
 
-        # Ge
-
         # Chain the batches back together and return the list
-        return itertools.chain.from_iterable(articles)
+        return self.articles
 
     def getTotalResultsCount(self: object, query: str) -> int:
         """Helper method that returns the total number of results that match the query.
@@ -169,34 +184,6 @@ class PubMed(object):
         else:
             return response.text
 
-    def _getArticles(self: object, article_ids: list) -> list:
-        """Helper method that batches a list of article IDs and retrieves the content.
-
-        Parameters:
-            - article_ids   List, article IDs.
-
-        Returns:
-            - articles      List, article objects.
-        """
-
-        # Get the default parameters
-        parameters = self.parameters.copy()
-        parameters["id"] = article_ids
-
-        # Make the request
-        response = self._get(
-            url="/entrez/eutils/efetch.fcgi", parameters=parameters, output="xml"
-        )
-
-        # Parse as XML
-        root = xml.fromstring(response)
-
-        # Loop over the articles and construct article objects
-        for article in root.iter("PubmedArticle"):
-            yield PubMedArticle(xml_element=article)
-        for book in root.iter("PubmedBookArticle"):
-            yield PubMedBookArticle(xml_element=book)
-
     def _getPubMedData(self: object, query: str, max_results: int) -> dict:
         """Helper method to retrieve the QueryKey and WebEnv for a query.
 
@@ -225,9 +212,11 @@ class PubMed(object):
         WebEnv = root.xpath(".//WebEnv")[0].text
 
         # Return the data
-        return {"query_key": query_key, "WebEnv": WebEnv, "retmax": max_results}
+        return {"query_key": query_key, "WebEnv": WebEnv}
 
-    def _getArticlesEnv(self: object, query_data: list) -> list:
+    def _getArticlesEnv(
+        self: object, query_data: list, start: int = 0, end: int = 100
+    ) -> list:
         """Helper method that batches a list of article IDs and retrieves the content.
 
         Parameters:
@@ -241,7 +230,37 @@ class PubMed(object):
         parameters = self.parameters.copy()
         parameters["query_key"] = query_data["query_key"]
         parameters["WebEnv"] = query_data["WebEnv"]
-        parameters["retmax"] = query_data["retmax"]
+        parameters["retmax"] = end
+        parameters["retstart"] = start
+
+        # Make the request
+        response = self._get(
+            url="/entrez/eutils/efetch.fcgi", parameters=parameters, output="xml"
+        )
+
+        # Parse as XML
+        root = xml.fromstring(response)
+
+        # Loop over the articles and construct article objects
+        for article in root.iter("PubmedArticle"):
+            yield PubMedArticle(xml_element=article)
+        for book in root.iter("PubmedBookArticle"):
+            yield PubMedBookArticle(xml_element=book)
+
+    #### The following methods are archived for reference ####
+    def _getArticles(self: object, article_ids: list) -> list:
+        """Helper method that batches a list of article IDs and retrieves the content.
+
+        Parameters:
+            - article_ids   List, article IDs.
+
+        Returns:
+            - articles      List, article objects.
+        """
+
+        # Get the default parameters
+        parameters = self.parameters.copy()
+        parameters["id"] = article_ids
 
         # Make the request
         response = self._get(
