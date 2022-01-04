@@ -48,36 +48,43 @@ class PubMed(object):
         self._requestsMade = []
 
         # Define the standard / default query parameters
-        self.parameters = {
-            "tool": tool,
-            "email": email,
-            "db": "pubmed",
-            "usehistory": "y",
-        }
+        self.parameters = {"tool": tool, "email": email, "db": "pubmed"}
 
         # Add the API key if it is provided
         if api_key:
             self.parameters["api_key"] = api_key
 
-    def query(self: object, query: str, max_results: int = 100):
+    def query(self: object, query: str, max_results: int = 100, batch_size: int = 250):
         """Method that executes a query agains the GraphQL schema, automatically
         inserting the PubMed data loader.
 
         Parameters:
             - query     String, the GraphQL query to execute against the schema.
+            - max_results    Int, maximum number of results to return.
+            - batch_size     Int, number of articles to retrieve in each batch.
 
         Returns:
             - result    ExecutionResult, GraphQL object that contains the result
                         in the "data" attribute.
         """
 
+        # Retrieve the PubMed query data
+        self.query_data = self._getPubMedData(query=query, max_results=max_results)
+
+        # Get the articles
+        articles = [self._getArticlesEnv(query_data=self.query_data)]
+
+        # Old method
         # Retrieve the article IDs for the query
-        article_ids = self._getArticleIds(query=query, max_results=max_results)
+        # article_ids = self._getArticleIds(query=query, max_results=max_results)
 
         # Get the articles themselves
-        articles = [
-            self._getArticles(article_ids=batch) for batch in batches(article_ids, 250)
-        ]
+        # articles = [
+        #     self._getArticles(article_ids=batch)
+        #     for batch in batches(article_ids, batch_size)
+        # ]
+
+        # Ge
 
         # Chain the batches back together and return the list
         return itertools.chain.from_iterable(articles)
@@ -175,6 +182,66 @@ class PubMed(object):
         # Get the default parameters
         parameters = self.parameters.copy()
         parameters["id"] = article_ids
+
+        # Make the request
+        response = self._get(
+            url="/entrez/eutils/efetch.fcgi", parameters=parameters, output="xml"
+        )
+
+        # Parse as XML
+        root = xml.fromstring(response)
+
+        # Loop over the articles and construct article objects
+        for article in root.iter("PubmedArticle"):
+            yield PubMedArticle(xml_element=article)
+        for book in root.iter("PubmedBookArticle"):
+            yield PubMedBookArticle(xml_element=book)
+
+    def _getPubMedData(self: object, query: str, max_results: int) -> dict:
+        """Helper method to retrieve the QueryKey and WebEnv for a query.
+
+        Parameters:
+            - query         String, the query to send to PubMed
+            - max_results   Int, maximum number of results to return
+
+        Returns:
+            - data          List, PubMed data.
+        """
+
+        # Get the default parameters
+        parameters = self.parameters.copy()
+
+        # Add specific query parameters
+        parameters["term"] = query
+        parameters["usehistory"] = "y"
+        parameters["retmax"] = max_results
+
+        # Make the request
+        response = self._get(
+            url="/entrez/eutils/esearch.fcgi", parameters=parameters, output="xml"
+        ).encode("utf-8")
+        root = xml.fromstring(response)
+        query_key = root.xpath(".//QueryKey")[0].text
+        WebEnv = root.xpath(".//WebEnv")[0].text
+
+        # Return the data
+        return {"query_key": query_key, "WebEnv": WebEnv, "retmax": max_results}
+
+    def _getArticlesEnv(self: object, query_data: list) -> list:
+        """Helper method that batches a list of article IDs and retrieves the content.
+
+        Parameters:
+            - query_data    List, PubMed data.
+
+        Returns:
+            - articles      List, article objects.
+        """
+
+        # Get the default parameters
+        parameters = self.parameters.copy()
+        parameters["query_key"] = query_data["query_key"]
+        parameters["WebEnv"] = query_data["WebEnv"]
+        parameters["retmax"] = query_data["retmax"]
 
         # Make the request
         response = self._get(
